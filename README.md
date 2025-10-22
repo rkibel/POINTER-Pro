@@ -1,15 +1,21 @@
 # POINTER-Pro
 
-iOS camera streaming application using LiveKit for real-time video broadcasting.
+**P**ersistent **O**bject-anchored **I**nteractions and **T**agging for **E**nriched **R**eality
+
+iOS application for object-centric virtual overlays using real-time pose estimation and LiveKit streaming.
 
 ## Features
 
-- ✅ Real-time camera preview
+- ✅ Interactive home page with navigation
+- ✅ Real-time camera preview with pose estimation region indicator
 - ✅ Stream to LiveKit server
 - ✅ Back camera capture at 720p/30fps
-- ✅ Simple play/stop controls
+- ✅ Visual overlay showing active estimation region
 - ✅ Connection status monitoring
 - ✅ Environment-based configuration
+- ✅ Object scanning with multi-angle photo capture
+- ✅ Export photos to Photos app or share via iOS share sheet
+- ✅ Independent camera sessions for scanning and inference
 
 ## Requirements
 
@@ -61,24 +67,44 @@ Follow the comprehensive guide in [`livekit-server-setup.md`](./livekit-server-s
 
 ## Usage
 
-1. Launch the app
-2. Grant camera permissions when prompted
-3. The camera preview will appear automatically
-4. Press the **Play** button to start streaming
-5. Press **Stop** to end the stream
-6. Monitor connection status at the bottom of the screen
+### Scanning Objects
+
+1. Launch the app to see the POINTER home page
+2. Tap **Scan Objects** to start the object scanning interface
+3. Grant camera permissions when prompted
+4. Position your object within the scan guide (center square)
+5. Tap the **capture button** (white circle) to take photos from different angles
+6. Take **5 photos** total - the app will guide you with a counter
+7. Review captured photos in the thumbnail gallery at the bottom
+8. Tap thumbnails to view full-screen images
+9. Use the **trash button** to delete individual photos or **Clear** to start over
+10. Once 5/5 photos are captured, tap **Export** to:
+    - **Save to Photos** - Save all 5 photos to your Photos library
+    - **Share** - Use iOS share sheet to export via AirDrop, Files, iCloud, etc.
+
+### Live Inference
+
+1. From the home page, tap **Inference** to start the streaming interface
+2. The camera preview will appear with visual indicators showing the pose estimation region
+3. Press the **Play** button to start streaming to LiveKit server
+4. Press **Stop** to end the stream
+5. Monitor connection status indicator at the top of the screen
+
+**Note:** Scan Objects and Inference use independent camera sessions - switching between them properly allocates/deallocates resources.
 
 ## Project Structure
 
 ```
 Pointer/
-├── PointerApp.swift          # App entry point
-├── ContentView.swift          # Main content view wrapper
-├── StreamingView.swift        # UI with camera preview and controls
-├── CameraPreviewView.swift    # Camera preview SwiftUI view
-├── WebRTCManager.swift        # Streaming logic and LiveKit integration
-├── Config.swift               # Environment configuration loader
-└── Persistence.swift          # Core Data (not currently used)
+├── PointerApp.swift            # App entry point
+├── HomeView.swift              # Main landing page with navigation
+├── StreamingView.swift         # Live inference UI with streaming
+├── ScanObjectsView.swift       # Object scanning interface
+├── CameraPreviewView.swift     # LiveKit camera preview view
+├── ScanCameraPreviewView.swift # AVFoundation camera preview view
+├── WebRTCManager.swift         # Streaming logic and LiveKit integration
+├── ScanCameraManager.swift     # Object scanning camera manager
+└── Config.swift                # Environment configuration loader
 ```
 
 ## Configuration

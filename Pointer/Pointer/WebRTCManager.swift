@@ -44,15 +44,13 @@ class WebRTCManager: ObservableObject {
     // MARK: - Initialization
     init() {
         room = Room()
-        captureTask = Task {
-            await startCameraCapture()
-        }
     }
     
     deinit {
         captureTask?.cancel()
-        Task { [weak self] in
-            _ = await self?.stopCapture()
+        Task { [room, localVideoTrack] in
+            await room.disconnect()
+            try? await localVideoTrack?.stop()
         }
     }
     
@@ -60,10 +58,10 @@ class WebRTCManager: ObservableObject {
     
     /// Start camera preview and optionally streaming
     func startCapture() {
-        guard !isCapturing, captureTask == nil || captureTask?.isCancelled == true else {
-            return
-        }
+        // Cancel any existing capture task
+        captureTask?.cancel()
         
+        // Always create a new task to ensure fresh initialization
         captureTask = Task {
             await startCameraCapture()
         }
@@ -74,7 +72,15 @@ class WebRTCManager: ObservableObject {
         isCapturing = false
         captureTask?.cancel()
         captureTask = nil
-        localVideoTrack = nil
+        
+        // Stop the video track
+        if let track = localVideoTrack {
+            try? await track.stop()
+        }
+        
+        await MainActor.run {
+            localVideoTrack = nil
+        }
     }
     
     /// Start streaming to the LiveKit server
@@ -98,7 +104,18 @@ class WebRTCManager: ObservableObject {
     // MARK: - Private Methods
     
     private func startCameraCapture() async {
-        if isCapturing { return }
+        // Reset capturing state for fresh start
+        isCapturing = false
+        
+        // Stop any existing video track
+        if let existingTrack = await MainActor.run(body: { self.localVideoTrack }) {
+            try? await existingTrack.stop()
+            await MainActor.run {
+                self.localVideoTrack = nil
+            }
+        }
+        
+        // Set capturing flag
         isCapturing = true
         
         // Check camera permission
@@ -134,17 +151,16 @@ class WebRTCManager: ObservableObject {
         
         do {
             try await videoTrack.start()
+            
+            await MainActor.run {
+                self.localVideoTrack = videoTrack
+                self.errorMessage = nil
+            }
         } catch {
             await MainActor.run {
                 self.errorMessage = "Failed to start camera: \(error.localizedDescription)"
                 self.isCapturing = false
             }
-            return
-        }
-        
-        await MainActor.run {
-            self.localVideoTrack = videoTrack
-            self.errorMessage = nil
         }
     }
     

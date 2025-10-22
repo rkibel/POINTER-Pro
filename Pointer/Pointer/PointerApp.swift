@@ -6,13 +6,12 @@
 //
 
 import SwiftUI
-import CoreData
 
 @main
 struct PointerApp: App {
     var body: some Scene {
         WindowGroup {
-            StreamingView()
+            HomeView()
         }
     }
 }
