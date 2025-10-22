@@ -231,7 +231,8 @@
                 room.on('trackUnsubscribed', handleTrackUnsubscribed);
                 room.on('participantConnected', (participant) => {
                     console.log('Participant connected:', participant.identity);
-                    showStatus(`Connected! Participants: ${room.participants.size}`, 'connected');
+                    const participantCount = room.remoteParticipants ? room.remoteParticipants.size : 0;
+                    showStatus(`Connected! Participants: ${participantCount}`, 'connected');
                 });
                 room.on('disconnected', () => {
                     showStatus('Disconnected from room', 'error');
@@ -248,7 +249,8 @@
                 document.getElementById('disconnect-btn').style.display = 'block';
 
                 console.log('Connected to room:', roomName);
-                console.log('Participants:', room.participants.size);
+                const participantCount = room.remoteParticipants ? room.remoteParticipants.size : 0;
+                console.log('Participants:', participantCount);
 
             } catch (error) {
                 console.error('Connection error:', error);
