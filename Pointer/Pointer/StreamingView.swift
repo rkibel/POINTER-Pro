@@ -25,11 +25,14 @@ struct StreamingView: View {
             .edgesIgnoringSafeArea(.all)
             
             // 3D Bounding box overlay
-            if webRTCManager.currentPoseData != nil {
+            if let poseData = webRTCManager.currentPoseData {
                 GeometryReader { geometry in
                     BoundingBoxOverlayView(
-                        poseData: webRTCManager.currentPoseData,
-                        imageSize: CGSize(width: 720, height: 1280)  // Match your stream resolution
+                        poseData: poseData,
+                        imageSize: CGSize(
+                            width: CGFloat(poseData.imageSize[0]),
+                            height: CGFloat(poseData.imageSize[1])
+                        )
                     )
                 }
                 .edgesIgnoringSafeArea(.all)
