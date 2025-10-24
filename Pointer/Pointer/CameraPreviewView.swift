@@ -44,7 +44,7 @@ struct VideoViewWrapper: UIViewRepresentable {
         
         let videoView = VideoView()
         videoView.backgroundColor = .black
-        videoView.layoutMode = .fill
+        videoView.layoutMode = .fit
         videoView.mirrorMode = .off
         videoView.translatesAutoresizingMaskIntoConstraints = false
         videoView.track = videoTrack

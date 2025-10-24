@@ -24,12 +24,26 @@ struct StreamingView: View {
             }
             .edgesIgnoringSafeArea(.all)
             
+            // 3D Bounding box overlay
+            if webRTCManager.currentPoseData != nil {
+                GeometryReader { geometry in
+                    BoundingBoxOverlayView(
+                        poseData: webRTCManager.currentPoseData,
+                        imageSize: CGSize(width: 720, height: 1280)  // Match your stream resolution
+                    )
+                }
+                .edgesIgnoringSafeArea(.all)
+            }
+            
             // Overlay UI
             VStack {
                 // Top bar - Status
                 HStack {
                     StatusIndicator(state: webRTCManager.connectionState)
                     Spacer()
+                    
+                    // Pose data indicator
+                    PoseDataIndicator(hasData: webRTCManager.currentPoseData != nil)
                 }
                 .padding()
                 
@@ -107,6 +121,27 @@ struct StatusIndicator: View {
         case .connected: return .green
         case .failed: return .red
         }
+    }
+}
+
+/// Pose data indicator showing whether pose data is being received
+struct PoseDataIndicator: View {
+    let hasData: Bool
+    
+    var body: some View {
+        HStack {
+            Circle()
+                .fill(hasData ? Color.green : Color.red)
+                .frame(width: 12, height: 12)
+            
+            Text(hasData ? "Data Received" : "No Data")
+                .font(.subheadline)
+                .foregroundColor(.white)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.black.opacity(0.5))
+        .cornerRadius(20)
     }
 }
 

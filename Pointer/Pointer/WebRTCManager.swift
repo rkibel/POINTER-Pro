@@ -17,12 +17,17 @@ class WebRTCManager: ObservableObject {
     @Published var isStreaming: Bool = false
     @Published var connectionState: ConnectionState = .disconnected
     @Published var errorMessage: String?
-    @Published var localVideoTrack: LocalVideoTrack?  // Changed: Publish the track directly
+    @Published var localVideoTrack: LocalVideoTrack?
+    @Published var currentPoseData: PoseData?  // Pose estimation data received from server
     
     // MARK: - Properties
     private var room: Room
     private var isCapturing: Bool = false
     private var captureTask: Task<Void, Never>?
+    private let jsonDecoder = JSONDecoder()
+    private var lastDataReceivedTime: Date?
+    private var dataTimeoutTimer: Timer?
+    private let dataTimeoutInterval: TimeInterval = 2.0  // Clear data if not received for 2 seconds
     
     // MARK: - Connection States
     enum ConnectionState {
@@ -44,9 +49,15 @@ class WebRTCManager: ObservableObject {
     // MARK: - Initialization
     init() {
         room = Room()
+        // Set this instance as the room delegate to receive data messages
+        room.add(delegate: self)
+        
+        // Start timer to check for stale pose data
+        startDataTimeoutTimer()
     }
     
     deinit {
+        dataTimeoutTimer?.invalidate()
         captureTask?.cancel()
         Task { [room, localVideoTrack] in
             await room.disconnect()
@@ -204,6 +215,60 @@ class WebRTCManager: ObservableObject {
                 self.connectionState = .failed
                 self.isStreaming = false
             }
+        }
+    }
+    
+    /// Start timer to periodically check if pose data has become stale
+    private func startDataTimeoutTimer() {
+        // Run on main thread since we're updating @Published properties
+        DispatchQueue.main.async { [weak self] in
+            self?.dataTimeoutTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                self?.checkDataTimeout()
+            }
+        }
+    }
+    
+    /// Check if pose data has timed out and clear it if so
+    private func checkDataTimeout() {
+        guard let lastReceived = lastDataReceivedTime else {
+            // No data ever received, ensure currentPoseData is nil
+            if currentPoseData != nil {
+                currentPoseData = nil
+            }
+            return
+        }
+        
+        let timeSinceLastData = Date().timeIntervalSince(lastReceived)
+        if timeSinceLastData > dataTimeoutInterval {
+            // Data is stale, clear it
+            if currentPoseData != nil {
+                currentPoseData = nil
+                lastDataReceivedTime = nil
+            }
+        }
+    }
+}
+
+// MARK: - RoomDelegate
+extension WebRTCManager: RoomDelegate {
+    /// Called when data is received from a remote participant
+    func room(_ room: Room, participant: RemoteParticipant?, didReceiveData data: Data, forTopic topic: String, encryptionType: LiveKit.EncryptionType) {
+        // Filter for pose_estimates topic
+        guard topic == "pose_estimates" else {
+            return
+        }
+        
+        // Decode the JSON data
+        do {
+            let poseData = try jsonDecoder.decode(PoseData.self, from: data)
+            
+            // Update on main thread since this is a @Published property
+            Task { @MainActor in
+                self.currentPoseData = poseData
+                self.lastDataReceivedTime = Date()
+            }
+        } catch {
+            print("❌ Failed to decode pose data: \(error.localizedDescription)")
         }
     }
 }

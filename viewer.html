@@ -137,6 +137,39 @@
             border-radius: 4px;
             overflow-x: auto;
         }
+
+        .data-log {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .data-log h3 {
+            margin-top: 0;
+            color: #28a745;
+        }
+
+        .data-log-entry {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            border-left: 3px solid #28a745;
+        }
+
+        .data-log-entry .timestamp {
+            color: #888;
+        }
+
+        .data-log-entry .topic {
+            color: #007aff;
+            font-weight: bold;
+        }
     </style>
 </head>
 
@@ -158,6 +191,15 @@
         <div id="status"></div>
 
         <div id="video-container"></div>
+
+        <div class="data-log" id="data-log-container">
+            <h3>📦 Data Channel Log</h3>
+            <div id="data-log">
+                <div style="color: #888; text-align: center; padding: 20px;">
+                    Waiting for data messages... (Connect and start streaming to see data)
+                </div>
+            </div>
+        </div>
 
         <div class="info">
             <h3>📋 Instructions</h3>
@@ -229,6 +271,7 @@
                 // Set up event handlers
                 room.on('trackSubscribed', handleTrackSubscribed);
                 room.on('trackUnsubscribed', handleTrackUnsubscribed);
+                room.on('dataReceived', handleDataReceived);
                 room.on('participantConnected', (participant) => {
                     console.log('Participant connected:', participant.identity);
                     const participantCount = room.remoteParticipants ? room.remoteParticipants.size : 0;
@@ -295,6 +338,70 @@
             const wrapper = document.getElementById(`video-${track.sid}`);
             if (wrapper) {
                 wrapper.remove();
+            }
+        }
+
+        function handleDataReceived(payload, participant, kind, topic) {
+            console.log('📦 DATA RECEIVED:');
+            console.log('  From:', participant ? participant.identity : 'unknown');
+            console.log('  Topic:', topic);
+            console.log('  Kind:', kind);
+            console.log('  Size:', payload.byteLength, 'bytes');
+
+            // Show data log container
+            document.getElementById('data-log-container').style.display = 'block';
+
+            // Try to decode as text
+            const decoder = new TextDecoder();
+            try {
+                const text = decoder.decode(payload);
+                console.log('  Content (text):', text.substring(0, 200));
+
+                // Try to parse as JSON
+                let displayText = text.substring(0, 200);
+                try {
+                    const json = JSON.parse(text);
+                    console.log('  Content (JSON):', json);
+                    displayText = JSON.stringify(json, null, 2);
+
+                    // If it's pose data, show it prominently
+                    if (topic === 'pose_estimates' && json.frame_count) {
+                        showStatus(`📦 Pose data received! Frame ${json.frame_count}`, 'connected');
+                    }
+                } catch (e) {
+                    console.log('  (Not valid JSON)');
+                }
+
+                // Add to log
+                addDataLogEntry(participant ? participant.identity : 'unknown', topic, displayText, payload.byteLength);
+            } catch (e) {
+                console.log('  Content: Binary data (not UTF-8 text)');
+                addDataLogEntry(participant ? participant.identity : 'unknown', topic, '[Binary data]', payload.byteLength);
+            }
+        }
+
+        function addDataLogEntry(from, topic, content, size) {
+            const logDiv = document.getElementById('data-log');
+
+            // Clear placeholder on first message
+            if (logDiv.children.length === 1 && logDiv.firstChild.style) {
+                logDiv.innerHTML = '';
+            }
+
+            const entry = document.createElement('div');
+            entry.className = 'data-log-entry';
+
+            const timestamp = new Date().toLocaleTimeString();
+            entry.innerHTML = `
+                <div><span class="timestamp">${timestamp}</span> | From: <strong>${from}</strong> | Topic: <span class="topic">${topic || '(none)'}</span> | Size: ${size} bytes</div>
+                <pre style="margin: 5px 0 0 0; white-space: pre-wrap; word-break: break-all;">${content}</pre>
+            `;
+
+            logDiv.insertBefore(entry, logDiv.firstChild);
+
+            // Keep only last 10 entries
+            while (logDiv.children.length > 10) {
+                logDiv.removeChild(logDiv.lastChild);
             }
         }
 
