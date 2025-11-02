@@ -11,20 +11,54 @@ import LiveKit
 /// Main streaming interface view
 struct StreamingView: View {
     @StateObject private var webRTCManager = WebRTCManager()
+    @State private var showDetectionBox = false
+    @State private var showSegmentation = false
+    @State private var showPoseEstimation = true
     
     var body: some View {
+        if !Config.isConfigured {
+            VStack(spacing: 20) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 60))
+                    .foregroundColor(.orange)
+                
+                Text("Configuration Required")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundColor(.white)
+                
+                Text("LiveKit credentials are not configured.\n\nPlease ensure your .env file contains:\n• LIVEKIT_URL\n• LIVEKIT_TOKEN")
+                    .font(.system(size: 16))
+                    .foregroundColor(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 30)
+                
+                Spacer()
+            }
+            .padding(.top, 60)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(red: 0.1, green: 0.1, blue: 0.2),
+                        Color(red: 0.05, green: 0.15, blue: 0.25)
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .ignoresSafeArea()
+        } else {
+            streamingContent
+        }
+    }
+    
+    var streamingContent: some View {
         ZStack {
             // Camera preview (full screen)
             CameraPreviewView(videoTrack: webRTCManager.localVideoTrack)
                 .edgesIgnoringSafeArea(.all)
             
-            // Pose estimation region indicator
-            GeometryReader { geometry in
-                PoseEstimationOverlay(geometry: geometry)
-            }
-            .edgesIgnoringSafeArea(.all)
-            
-            // 3D Bounding box overlay
+            // 3D Bounding box overlay (only if pose data is available)
             if let poseData = webRTCManager.currentPoseData {
                 GeometryReader { geometry in
                     BoundingBoxOverlayView(
@@ -32,7 +66,10 @@ struct StreamingView: View {
                         imageSize: CGSize(
                             width: CGFloat(poseData.imageSize[0]),
                             height: CGFloat(poseData.imageSize[1])
-                        )
+                        ),
+                        showDetectionBox: showDetectionBox,
+                        showSegmentation: showSegmentation,
+                        showPoseEstimation: showPoseEstimation
                     )
                 }
                 .edgesIgnoringSafeArea(.all)
@@ -44,7 +81,6 @@ struct StreamingView: View {
                 HStack {
                     StatusIndicator(state: webRTCManager.connectionState)
                     Spacer()
-                    
                     // Pose data indicator
                     PoseDataIndicator(hasData: webRTCManager.currentPoseData != nil)
                 }
@@ -61,14 +97,30 @@ struct StreamingView: View {
                         .cornerRadius(8)
                         .padding()
                 }
-                
-                // Bottom controls
-                HStack(spacing: 30) {
-                    // Stream toggle button
+                // Bottom controls: absolutely center the start/stop button
+                ZStack {
+                    // Centered start/stop button
                     Button(action: toggleStreaming) {
                         Image(systemName: webRTCManager.isStreaming ? "stop.circle.fill" : "play.circle.fill")
                             .font(.system(size: 70))
                             .foregroundColor(webRTCManager.isStreaming ? .red : .white)
+                    }
+                    // Toggle buttons in triangular layout aligned to bottom right
+                    HStack {
+                        Spacer()
+                        VStack(spacing: 12) {
+                            // Top button: Pose Estimation
+                            PoseEstimationToggle(isEnabled: $showPoseEstimation)
+                                .frame(width: 36, height: 36)
+                            // Bottom row: Detection and Segmentation
+                            HStack(spacing: 12) {
+                                DetectionBoxToggle(isEnabled: $showDetectionBox)
+                                    .frame(width: 36, height: 36)
+                                SegmentationToggle(isEnabled: $showSegmentation)
+                                    .frame(width: 36, height: 36)
+                            }
+                        }
+                        .padding(.trailing, 30)
                     }
                 }
                 .padding(.bottom, 50)
@@ -148,81 +200,6 @@ struct PoseDataIndicator: View {
     }
 }
 
-/// Visual overlay indicating the center-cropped region used for pose estimation
-struct PoseEstimationOverlay: View {
-    let geometry: GeometryProxy
-    
-    var body: some View {
-        let width = geometry.size.width
-        let height = geometry.size.height
-        
-        // Calculate center square crop region (assuming portrait mode)
-        let cropSize = width // Square crop based on width
-        let topCrop = (height - cropSize) / 2
-        let bottomCrop = (height - cropSize) / 2
-        
-        ZStack {
-            // Dimmed overlay for cropped regions
-            VStack(spacing: 0) {
-                // Top cropped area
-                Rectangle()
-                    .fill(Color.black.opacity(0.3))
-                    .frame(height: topCrop)
-                
-                // Active estimation region (transparent)
-                Rectangle()
-                    .fill(Color.clear)
-                    .frame(height: cropSize)
-                
-                // Bottom cropped area
-                Rectangle()
-                    .fill(Color.black.opacity(0.3))
-                    .frame(height: bottomCrop)
-            }
-            
-            // Border outline for active region
-            Rectangle()
-                .strokeBorder(
-                    LinearGradient(
-                        gradient: Gradient(colors: [Color.green.opacity(0.6), Color.cyan.opacity(0.6)]),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 2
-                )
-                .frame(width: width - 4, height: cropSize - 4)
-                .position(x: width / 2, y: height / 2)
-            
-            // Corner markers for active region
-            VStack {
-                HStack {
-                    CornerMarker(corners: [.topLeft])
-                    Spacer()
-                    CornerMarker(corners: [.topRight])
-                }
-                Spacer()
-                HStack {
-                    CornerMarker(corners: [.bottomLeft])
-                    Spacer()
-                    CornerMarker(corners: [.bottomRight])
-                }
-            }
-            .frame(width: width - 20, height: cropSize - 20)
-            .position(x: width / 2, y: height / 2)
-            
-            // Label at top of active region
-            Text("POSE ESTIMATION REGION")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(.green.opacity(0.8))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.black.opacity(0.6))
-                .cornerRadius(4)
-                .position(x: width / 2, y: topCrop + 15)
-        }
-    }
-}
-
 /// Corner marker view for the pose estimation region
 struct CornerMarker: View {
     let corners: UIRectCorner
@@ -285,6 +262,72 @@ struct CornerMarker: View {
             }
         }
         .frame(width: length, height: length)
+    }
+}
+
+/// Detection box toggle indicator
+struct DetectionBoxToggle: View {
+    @Binding var isEnabled: Bool
+    
+    var body: some View {
+        Button(action: { isEnabled.toggle() }) {
+            Image(systemName: "viewfinder")
+                .font(.system(size: 20))
+                .foregroundColor(.white)
+                .padding(6)
+                .background(
+                    Circle()
+                        .fill(isEnabled ? Color.green : Color.black.opacity(0.5))
+                )
+                .overlay(
+                    Circle()
+                        .stroke(isEnabled ? Color.green : Color.white.opacity(0.3), lineWidth: 2)
+                )
+        }
+    }
+}
+
+/// Segmentation mask toggle indicator
+struct SegmentationToggle: View {
+    @Binding var isEnabled: Bool
+    
+    var body: some View {
+        Button(action: { isEnabled.toggle() }) {
+            Image(systemName: "wand.and.stars")
+                .font(.system(size: 20))
+                .foregroundColor(.white)
+                .padding(6)
+                .background(
+                    Circle()
+                        .fill(isEnabled ? Color.yellow : Color.black.opacity(0.5))
+                )
+                .overlay(
+                    Circle()
+                        .stroke(isEnabled ? Color.yellow : Color.white.opacity(0.3), lineWidth: 2)
+                )
+        }
+    }
+}
+
+/// Pose estimation toggle indicator
+struct PoseEstimationToggle: View {
+    @Binding var isEnabled: Bool
+    
+    var body: some View {
+        Button(action: { isEnabled.toggle() }) {
+            Image(systemName: "cube.transparent")
+                .font(.system(size: 20))
+                .foregroundColor(.white)
+                .padding(6)
+                .background(
+                    Circle()
+                        .fill(isEnabled ? Color.cyan : Color.black.opacity(0.5))
+                )
+                .overlay(
+                    Circle()
+                        .stroke(isEnabled ? Color.cyan : Color.white.opacity(0.3), lineWidth: 2)
+                )
+        }
     }
 }
 
