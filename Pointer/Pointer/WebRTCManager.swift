@@ -188,9 +188,15 @@ class WebRTCManager: ObservableObject {
         }
         
         do {
-            // Get LiveKit connection details from Config
-            let url = Config.liveKitURL
-            let token = Config.liveKitToken
+            // Check if configuration is available
+            guard let url = Config.liveKitURL, let token = Config.liveKitToken else {
+                await MainActor.run {
+                    self.errorMessage = "LiveKit configuration not set. Please check your .env file with LIVEKIT_URL and LIVEKIT_TOKEN."
+                    self.connectionState = .failed
+                    self.isStreaming = false
+                }
+                return
+            }
             
             // Connect to LiveKit room
             try await room.connect(url: url, token: token)

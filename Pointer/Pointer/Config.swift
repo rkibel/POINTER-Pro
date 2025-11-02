@@ -43,20 +43,20 @@ enum Config {
         return configuration[key]
     }
     
+    /// Check if required configuration is available
+    static var isConfigured: Bool {
+        return getEnvVariable("LIVEKIT_URL") != nil && 
+               getEnvVariable("LIVEKIT_TOKEN") != nil
+    }
+    
     /// LiveKit server URL (wss://your-server.com)
-    static var liveKitURL: String {
-        guard let url = getEnvVariable("LIVEKIT_URL") else {
-            fatalError("LIVEKIT_URL not set in .env file")
-        }
-        return url
+    static var liveKitURL: String? {
+        return getEnvVariable("LIVEKIT_URL")
     }
     
     /// LiveKit access token
-    static var liveKitToken: String {
-        guard let token = getEnvVariable("LIVEKIT_TOKEN") else {
-            fatalError("LIVEKIT_TOKEN not set in .env file")
-        }
-        return token
+    static var liveKitToken: String? {
+        return getEnvVariable("LIVEKIT_TOKEN")
     }
     
     /// Room name for LiveKit
