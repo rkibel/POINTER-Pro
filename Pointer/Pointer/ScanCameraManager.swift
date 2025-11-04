@@ -81,6 +81,32 @@ class ScanCameraManager: NSObject, ObservableObject {
         isCapturing = false
     }
     
+    /// Pause camera session (keeps session alive but stops processing)
+    func pauseCapture() {
+        guard let session = captureSession, session.isRunning else { return }
+        
+        // Run on background queue to avoid blocking UI
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            session.stopRunning()
+            DispatchQueue.main.async {
+                self?.isCapturing = false
+            }
+        }
+    }
+    
+    /// Resume camera session
+    func resumeCapture() {
+        guard let session = captureSession, !session.isRunning else { return }
+        
+        // Run on background queue to avoid blocking UI
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            session.startRunning()
+            DispatchQueue.main.async {
+                self?.isCapturing = true
+            }
+        }
+    }
+    
     /// Capture a photo
     func capturePhoto() {
         guard let photoOutput = photoOutput,

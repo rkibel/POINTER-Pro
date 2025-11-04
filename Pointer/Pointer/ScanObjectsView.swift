@@ -12,11 +12,15 @@ import Photos
 struct ScanObjectsView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var scanManager = ScanCameraManager()
+    @StateObject private var vmManager = VMProcessingManager()
     @State private var showingExportOptions = false
     @State private var showingImageViewer = false
     @State private var selectedImageIndex: Int?
     @State private var exportSuccess = false
     @State private var exportError: String?
+    @State private var objectDescription = ""
+    @State private var showingDescriptionPrompt = false
+    @State private var isProcessingOnVM = false
     
     var body: some View {
         ZStack {
@@ -111,7 +115,7 @@ struct ScanObjectsView: View {
                     HStack(spacing: 12) {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 24))
-                        Text("Photos saved successfully!")
+                        Text(isProcessingOnVM ? "Processing complete!" : "Photos saved successfully!")
                             .font(.system(size: 16, weight: .semibold))
                     }
                     .foregroundColor(.white)
@@ -120,6 +124,42 @@ struct ScanObjectsView: View {
                     .cornerRadius(8)
                     .padding()
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                
+                // VM Processing indicator
+                if vmManager.isProcessing {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(1.2)
+                        Text(vmManager.processingProgress)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    .padding(20)
+                    .background(Color.black.opacity(0.8))
+                    .cornerRadius(12)
+                    .padding()
+                }
+                
+                // Export error message
+                if let error = exportError {
+                    VStack(spacing: 8) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 24))
+                            Text("Error")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                        Text(error)
+                            .font(.system(size: 14))
+                            .multilineTextAlignment(.center)
+                    }
+                    .foregroundColor(.white)
+                    .padding()
+                    .background(Color.red.opacity(0.8))
+                    .cornerRadius(8)
+                    .padding()
                 }
                 
                 Spacer()
@@ -211,7 +251,9 @@ struct ScanObjectsView: View {
                     // Export button
                     if scanManager.isComplete {
                         Button(action: {
-                            showingExportOptions = true
+                            // Pause camera to improve performance during text input
+                            scanManager.pauseCapture()
+                            showingDescriptionPrompt = true
                         }) {
                             HStack(spacing: 8) {
                                 Image(systemName: "square.and.arrow.up")
@@ -245,7 +287,51 @@ struct ScanObjectsView: View {
         .onDisappear {
             scanManager.stopCapture()
         }
+        .sheet(isPresented: $showingDescriptionPrompt) {
+            NavigationView {
+                VStack(spacing: 20) {
+                    Text("Describe the Object")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .padding(.top)
+                    
+                    Text("Enter a description that will be used to identify this object during inference")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                    
+                    TextField("e.g., red mug, laptop, phone", text: $objectDescription)
+                        .textFieldStyle(.roundedBorder)
+                        .padding()
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                    
+                    Spacer()
+                }
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Cancel") {
+                            showingDescriptionPrompt = false
+                            // Resume camera when canceling
+                            scanManager.resumeCapture()
+                        }
+                    }
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Next") {
+                            showingDescriptionPrompt = false
+                            showingExportOptions = true
+                        }
+                        .disabled(objectDescription.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+            }
+        }
         .confirmationDialog("Export Photos", isPresented: $showingExportOptions, titleVisibility: .visible) {
+            Button("Process on VM") {
+                processOnVM()
+            }
             Button("Save to Photos") {
                 saveToPhotos()
             }
@@ -262,6 +348,47 @@ struct ScanObjectsView: View {
     }
     
     // MARK: - Export Functions
+    
+    private func processOnVM() {
+        Task {
+            do {
+                isProcessingOnVM = true
+                exportError = nil
+                
+                let datasetId = try await vmManager.processImages(
+                    scanManager.capturedImages,
+                    description: objectDescription
+                )
+                
+                await MainActor.run {
+                    isProcessingOnVM = false
+                    exportSuccess = true
+                }
+                
+                // Hide success message and dismiss after 2 seconds
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    withAnimation {
+                        exportSuccess = false
+                    }
+                    // Optionally dismiss the view
+                    dismiss()
+                }
+                
+            } catch {
+                await MainActor.run {
+                    isProcessingOnVM = false
+                    exportError = error.localizedDescription
+                }
+                
+                // Hide error message after 5 seconds
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                    withAnimation {
+                        exportError = nil
+                    }
+                }
+            }
+        }
+    }
     
     private func saveToPhotos() {
         PHPhotoLibrary.requestAuthorization { status in
