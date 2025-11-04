@@ -7,13 +7,17 @@
 
 import SwiftUI
 import LiveKit
+import Combine
 
 /// Main streaming interface view
 struct StreamingView: View {
+    let datasetId: String
     @StateObject private var webRTCManager = WebRTCManager()
+    @StateObject private var vmManager = VMProcessingManager()
     @State private var showDetectionBox = false
     @State private var showSegmentation = false
     @State private var showPoseEstimation = true
+    @Environment(\.dismiss) private var dismiss
     
     var body: some View {
         if !Config.isConfigured {
@@ -133,6 +137,8 @@ struct StreamingView: View {
             Task {
                 await webRTCManager.stopCapture()
                 webRTCManager.stopStreaming()
+                // Stop inference when leaving the view
+                try? await vmManager.stopInference(datasetId: datasetId)
             }
         }
     }
@@ -332,5 +338,5 @@ struct PoseEstimationToggle: View {
 }
 
 #Preview {
-    StreamingView()
+    StreamingView(datasetId: "dataset_preview")
 }
