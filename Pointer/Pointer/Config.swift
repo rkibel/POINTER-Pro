@@ -45,8 +45,8 @@ enum Config {
     
     /// Check if required configuration is available
     static var isConfigured: Bool {
-        return getEnvVariable("LIVEKIT_URL") != nil && 
-               getEnvVariable("LIVEKIT_TOKEN") != nil
+        return getEnvVariable("LIVEKIT_URL") != nil &&
+        getEnvVariable("LIVEKIT_TOKEN") != nil
     }
     
     /// LiveKit server URL (wss://your-server.com)
@@ -63,5 +63,16 @@ enum Config {
     static var roomName: String {
         return getEnvVariable("LIVEKIT_ROOM") ?? "live"
     }
+    
+    // MARK: - VM API Configuration
+    
+    /// VM API base URL (e.g., http://your-vm-ip:5000)
+    static var vmApiURL: String? {
+        return getEnvVariable("VM_API_URL")
+    }
+    
+    /// Check if VM API is configured
+    static var isVMConfigured: Bool {
+        return vmApiURL != nil
+    }
 }
-
