@@ -12,6 +12,7 @@ import Combine
 /// Main streaming interface view
 struct StreamingView: View {
     let datasetId: String
+    let isDeveloperMode: Bool
     @StateObject private var webRTCManager = WebRTCManager()
     @StateObject private var vmManager = VMProcessingManager()
     @State private var showDetectionBox = false
@@ -137,8 +138,10 @@ struct StreamingView: View {
             Task {
                 await webRTCManager.stopCapture()
                 webRTCManager.stopStreaming()
-                // Stop inference when leaving the view
-                try? await vmManager.stopInference(datasetId: datasetId)
+                // Stop inference when leaving the view (skip if in developer mode)
+                if !isDeveloperMode {
+                    try? await vmManager.stopInference(datasetId: datasetId)
+                }
             }
         }
     }
@@ -338,5 +341,5 @@ struct PoseEstimationToggle: View {
 }
 
 #Preview {
-    StreamingView(datasetId: "dataset_preview")
+    StreamingView(datasetId: "dataset_preview", isDeveloperMode: false)
 }

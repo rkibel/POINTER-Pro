@@ -25,13 +25,7 @@ struct HomeView: View {
     @State private var isRunningInference = false
     @State private var showingSettings = false
     @State private var inferenceConfiguration: InferenceConfig = .basicDemo
-    
-    enum InferenceConfig: String, CaseIterable {
-        case basicDemo = "Basic Demo"
-        case instrument = "Instrument"
-        case lightbulb = "Lightbulb"
-        case digitalTwin = "Digital Twin"
-    }
+    @State private var isDeveloperMode = false
     
     private var backgroundGradient: LinearGradient {
         LinearGradient(
@@ -179,21 +173,28 @@ struct HomeView: View {
                             .cornerRadius(12)
                         }
                         
-                        // Inference Button - Enabled when a dataset is selected
+                        // Inference Button - Enabled when a dataset is selected or in developer mode
                         ZStack {
                             // Hidden NavigationLink
-                            if let selected = selectedDataset {
-                                NavigationLink(
-                                    destination: StreamingView(datasetId: selected.id),
-                                    isActive: $navigateToStreaming
-                                ) {
-                                    EmptyView()
-                                }
-                                .hidden()
+                            NavigationLink(
+                                destination: StreamingView(
+                                    datasetId: selectedDataset?.id ?? "developer_mode",
+                                    isDeveloperMode: isDeveloperMode
+                                ),
+                                isActive: $navigateToStreaming
+                            ) {
+                                EmptyView()
                             }
+                            .hidden()
                             
                             // Visible button
                             Button(action: {
+                                // In developer mode, allow streaming without dataset selection
+                                if isDeveloperMode {
+                                    navigateToStreaming = true
+                                    return
+                                }
+                                
                                 guard let selected = selectedDataset else { return }
                                 Task {
                                     isRunningInference = true
@@ -224,7 +225,7 @@ struct HomeView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 18)
                                 .background(
-                                    selectedDataset != nil ?
+                                    (selectedDataset != nil || isDeveloperMode) ?
                                     LinearGradient(
                                         gradient: Gradient(colors: [Color.orange, Color.red]),
                                         startPoint: .leading,
@@ -236,15 +237,15 @@ struct HomeView: View {
                                         endPoint: .trailing
                                     )
                                 )
-                                .foregroundColor(selectedDataset != nil ? .white : .white.opacity(0.4))
+                                .foregroundColor((selectedDataset != nil || isDeveloperMode) ? .white : .white.opacity(0.4))
                                 .cornerRadius(12)
                                 .overlay(
-                                    selectedDataset == nil ?
+                                    (selectedDataset == nil && !isDeveloperMode) ?
                                     RoundedRectangle(cornerRadius: 12)
                                         .stroke(Color.white.opacity(0.2), lineWidth: 1) : nil
                                 )
                             }
-                            .disabled(selectedDataset == nil || isRunningInference)
+                            .disabled((selectedDataset == nil && !isDeveloperMode) || isRunningInference)
                         }
                     }
                     .padding(.horizontal, 40)
@@ -309,219 +310,7 @@ struct HomeView: View {
                 Text(inferenceMessage)
             }
             .sheet(isPresented: $showingSettings) {
-                SettingsView(inferenceConfiguration: $inferenceConfiguration)
-            }
-        }
-    }
-}
-
-/// Settings view for app configuration
-struct SettingsView: View {
-    @Environment(\.dismiss) private var dismiss
-    @Binding var inferenceConfiguration: HomeView.InferenceConfig
-    
-    var body: some View {
-        NavigationView {
-            ZStack {
-                // Background gradient
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        Color(red: 0.1, green: 0.1, blue: 0.2),
-                        Color(red: 0.05, green: 0.15, blue: 0.25)
-                    ]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-                
-                VStack(spacing: 30) {
-                    // Inference Configuration Section
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Inference Configuration")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(.white)
-                        
-                        ForEach(HomeView.InferenceConfig.allCases, id: \.self) { config in
-                            Button(action: {
-                                inferenceConfiguration = config
-                            }) {
-                                HStack {
-                                    Text(config.rawValue)
-                                        .font(.system(size: 16, weight: .medium))
-                                        .foregroundColor(.white)
-                                    
-                                    Spacer()
-                                    
-                                    if inferenceConfiguration == config {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(.green)
-                                            .font(.system(size: 20))
-                                    } else {
-                                        Image(systemName: "circle")
-                                            .foregroundColor(.white.opacity(0.3))
-                                            .font(.system(size: 20))
-                                    }
-                                }
-                                .padding()
-                                .background(Color.white.opacity(0.1))
-                                .cornerRadius(10)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .stroke(inferenceConfiguration == config ? Color.green : Color.white.opacity(0.2), lineWidth: inferenceConfiguration == config ? 2 : 1)
-                                )
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                        }
-                    }
-                    .padding(.horizontal, 30)
-                    .padding(.top, 30)
-                    
-                    Spacer()
-                }
-            }
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                    .foregroundColor(.white)
-                }
-            }
-            .toolbarBackground(Color.black.opacity(0.3), for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-        }
-    }
-}
-
-/// Card component to display a preprocessed dataset
-struct DatasetCard: View {
-    let dataset: PreprocessedDataset
-    let isSelected: Bool
-    let onSelect: () -> Void
-    let onView: () -> Void
-    @State private var navigateToDetail = false
-    @StateObject private var previewLoader = DatasetPreviewLoader()
-    
-    var body: some View {
-        ZStack {
-            // Navigation link (hidden)
-            NavigationLink(destination: DatasetDetailView(dataset: dataset), isActive: $navigateToDetail) {
-                EmptyView()
-            }
-            .opacity(0)
-            
-            // Card content
-            HStack(spacing: 12) {
-                // Main content - tappable for selection
-                VStack(alignment: .leading, spacing: 8) {
-                    // Title
-                    Text(dataset.description)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white)
-                        .lineLimit(2)
-                    
-                    // Metadata row
-                    HStack(spacing: 16) {
-                        // Image count
-                        HStack(spacing: 6) {
-                            Image(systemName: "photo.stack")
-                                .font(.system(size: 12))
-                            Text("\(dataset.imageCount) images")
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                        .foregroundColor(.white.opacity(0.7))
-                    }
-                    
-                    // Dataset ID
-                    Text("ID: \(dataset.id)")
-                        .font(.system(size: 10, weight: .regular))
-                        .foregroundColor(.white.opacity(0.5))
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    onSelect()
-                }
-                
-                // Single preview image (clickable) on the right
-                if let previewImage = previewLoader.previewImages.first {
-                    Image(uiImage: previewImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 70, height: 70)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                        )
-                        .onTapGesture {
-                            navigateToDetail = true
-                        }
-                } else {
-                    // Placeholder while loading
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.white.opacity(0.1))
-                        .frame(width: 70, height: 70)
-                        .overlay(
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.5)))
-                                .scaleEffect(0.8)
-                        )
-                }
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity)
-            .background(isSelected ? Color.green.opacity(0.3) : Color.white.opacity(0.1))
-            .cornerRadius(10)
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(isSelected ? Color.green : Color.white.opacity(0.2), lineWidth: isSelected ? 2 : 1)
-            )
-        }
-        .onAppear {
-            Task {
-                await previewLoader.loadPreviews(for: dataset.id)
-            }
-        }
-    }
-}
-
-/// Handles loading preview thumbnails for dataset cards
-class DatasetPreviewLoader: ObservableObject {
-    @Published var previewImages: [UIImage] = []
-    
-    func loadPreviews(for datasetId: String) async {
-        guard let apiURL = Config.vmApiURL else { return }
-        
-        do {
-            // Fetch list of images
-            let imagesListURL = URL(string: "\(apiURL)/dataset/\(datasetId)/images")!
-            let (imagesData, _) = try await URLSession.shared.data(from: imagesListURL)
-            
-            guard let imagesList = try? JSONSerialization.jsonObject(with: imagesData) as? [String: Any],
-                  let referenceFilenames = imagesList["reference_images"] as? [String] else {
-                return
-            }
-            
-            // Load first reference image for preview
-            if let firstFilename = referenceFilenames.first {
-                let imageURL = URL(string: "\(apiURL)/dataset/\(datasetId)/image/reference/\(firstFilename)")!
-                
-                let (imageData, _) = try await URLSession.shared.data(from: imageURL)
-                if let image = UIImage(data: imageData) {
-                    await MainActor.run {
-                        self.previewImages = [image]
-                    }
-                }
-            }
-            
-        } catch {
-            // Silently fail for previews
-            await MainActor.run {
-                self.previewImages = []
+                SettingsView(inferenceConfiguration: $inferenceConfiguration, isDeveloperMode: $isDeveloperMode)
             }
         }
     }

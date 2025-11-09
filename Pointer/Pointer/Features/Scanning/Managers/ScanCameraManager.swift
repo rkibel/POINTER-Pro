@@ -160,10 +160,10 @@ class ScanCameraManager: NSObject, ObservableObject {
                 session.addInput(input)
             }
             
-            // Add photo output with optimized settings
+            // Add photo output with highest quality settings for preprocessing
             let output = AVCapturePhotoOutput()
             output.isHighResolutionCaptureEnabled = true
-            output.maxPhotoQualityPrioritization = .balanced  // Faster than .quality
+            output.maxPhotoQualityPrioritization = .quality
             
             if session.canAddOutput(output) {
                 session.addOutput(output)
