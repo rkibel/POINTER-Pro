@@ -212,7 +212,7 @@ struct ScanObjectsView: View {
                         Circle().fill(Color.white).frame(width: 60, height: 60)
                     }
                 }
-                .disabled(!scanManager.isCapturing)
+                .disabled(scanManager.captureSession == nil)
             }
             
             if scanManager.isComplete {
