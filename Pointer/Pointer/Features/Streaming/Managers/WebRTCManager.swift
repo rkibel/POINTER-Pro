@@ -27,7 +27,7 @@ class WebRTCManager: ObservableObject {
     private let jsonDecoder = JSONDecoder()
     private var lastDataReceivedTime: Date?
     private var dataTimeoutTimer: Timer?
-    private let dataTimeoutInterval: TimeInterval = 2.0  // Clear data if not received for 2 seconds
+    private let dataTimeoutInterval: TimeInterval = 0.1  // Clear data if not received for 100ms
     
     // MARK: - Connection States
     enum ConnectionState {
@@ -201,12 +201,13 @@ class WebRTCManager: ObservableObject {
             // Connect to LiveKit room
             try await room.connect(url: url, token: token)
             
-            // Publish local video track with options
             let options = VideoPublishOptions(
                 encoding: VideoEncoding(
-                    maxBitrate: 2_000_000,
+                    maxBitrate: 3_000_000,
                     maxFps: 30
-                )
+                ),
+                simulcast: false,
+                degradationPreference: .maintainResolution
             )
             
             try await room.localParticipant.publish(videoTrack: track, options: options)
@@ -274,7 +275,7 @@ extension WebRTCManager: RoomDelegate {
                 self.lastDataReceivedTime = Date()
             }
         } catch {
-            print("❌ Failed to decode pose data: \(error.localizedDescription)")
+            print(error.localizedDescription)
         }
     }
 }
