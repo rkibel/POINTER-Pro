@@ -13,8 +13,10 @@ import Combine
 struct StreamingView: View {
     let datasetId: String
     let isDeveloperMode: Bool
+    let inferenceConfiguration: InferenceConfig
     @StateObject private var webRTCManager = WebRTCManager()
     @StateObject private var vmManager = VMProcessingManager()
+    @StateObject private var lifxManager = LIFXManager()
     @State private var showDetectionBox = false
     @State private var showSegmentation = false
     @State private var showPoseEstimation = true
@@ -63,21 +65,49 @@ struct StreamingView: View {
             CameraPreviewView(videoTrack: webRTCManager.localVideoTrack)
                 .edgesIgnoringSafeArea(.all)
             
-            // 3D Bounding box overlay (only if pose data is available)
+            // Overlays based on inference configuration
             if let poseData = webRTCManager.currentPoseData {
-                GeometryReader { geometry in
-                    BoundingBoxOverlayView(
+                if inferenceConfiguration == .designVisualization {
+                    // AR Prop mode: Show virtual 3D model
+                    ARPropOverlayView(
                         poseData: poseData,
                         imageSize: CGSize(
                             width: CGFloat(poseData.imageSize[0]),
                             height: CGFloat(poseData.imageSize[1])
-                        ),
-                        showDetectionBox: showDetectionBox,
-                        showSegmentation: showSegmentation,
-                        showPoseEstimation: showPoseEstimation
+                        )
                     )
+                    .edgesIgnoringSafeArea(.all)
+                    
+                    // Also show bounding box overlay if toggles are enabled
+                    GeometryReader { geometry in
+                        BoundingBoxOverlayView(
+                            poseData: poseData,
+                            imageSize: CGSize(
+                                width: CGFloat(poseData.imageSize[0]),
+                                height: CGFloat(poseData.imageSize[1])
+                            ),
+                            showDetectionBox: showDetectionBox,
+                            showSegmentation: showSegmentation,
+                            showPoseEstimation: showPoseEstimation
+                        )
+                    }
+                    .edgesIgnoringSafeArea(.all)
+                } else {
+                    // Demo/Light modes: Show 3D bounding box overlay
+                    GeometryReader { geometry in
+                        BoundingBoxOverlayView(
+                            poseData: poseData,
+                            imageSize: CGSize(
+                                width: CGFloat(poseData.imageSize[0]),
+                                height: CGFloat(poseData.imageSize[1])
+                            ),
+                            showDetectionBox: showDetectionBox,
+                            showSegmentation: showSegmentation,
+                            showPoseEstimation: showPoseEstimation
+                        )
+                    }
+                    .edgesIgnoringSafeArea(.all)
                 }
-                .edgesIgnoringSafeArea(.all)
             }
             
             // Overlay UI
@@ -133,15 +163,33 @@ struct StreamingView: View {
         }
         .onAppear {
             webRTCManager.startCapture()
+            
+            // Enable LIFX if in light mode (light will turn on when object is detected)
+            if inferenceConfiguration == .light {
+                lifxManager.isEnabled = true
+            }
         }
         .onDisappear {
             Task {
                 await webRTCManager.stopCapture()
                 webRTCManager.stopStreaming()
+                
+                // Turn off LIFX if it was enabled
+                if lifxManager.isEnabled {
+                    lifxManager.turnOff()
+                    lifxManager.isEnabled = false
+                }
+                
                 // Stop inference when leaving the view (skip if in developer mode)
                 if !isDeveloperMode {
                     try? await vmManager.stopInference(datasetId: datasetId)
                 }
+            }
+        }
+        .onChange(of: webRTCManager.currentPoseData) { _, newPoseData in
+            // Update LIFX based on pose data (turns on when detected, off when not)
+            if inferenceConfiguration == .light {
+                lifxManager.updateFromPose(newPoseData)
             }
         }
     }
@@ -341,5 +389,5 @@ struct PoseEstimationToggle: View {
 }
 
 #Preview {
-    StreamingView(datasetId: "dataset_preview", isDeveloperMode: false)
+    StreamingView(datasetId: "dataset_preview", isDeveloperMode: false, inferenceConfiguration: .light)
 }

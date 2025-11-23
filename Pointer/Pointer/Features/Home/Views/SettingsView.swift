@@ -27,76 +27,77 @@ struct SettingsView: View {
                 )
                 .ignoresSafeArea()
                 
-                VStack(spacing: 30) {
-                    // Developer Mode Section
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Developer Mode")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(.white)
-                        
-                        Toggle(isOn: $isDeveloperMode) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Enable Developer Mode")
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundColor(.white)
-                                Text("Stream without running inference scripts")
-                                    .font(.system(size: 13))
-                                    .foregroundColor(.white.opacity(0.6))
-                            }
-                        }
-                        .tint(.cyan)
-                        .padding()
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(10)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(isDeveloperMode ? Color.cyan : Color.white.opacity(0.2), lineWidth: isDeveloperMode ? 2 : 1)
-                        )
-                    }
-                    .padding(.horizontal, 30)
-                    .padding(.top, 30)
-                    
-                    // Inference Configuration Section
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Inference Configuration")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundColor(.white)
-                        
-                        ForEach(InferenceConfig.allCases, id: \.self) { config in
-                            Button(action: {
-                                inferenceConfiguration = config
-                            }) {
-                                HStack {
-                                    Text(config.rawValue)
+                ScrollView {
+                    VStack(spacing: 30) {
+                        // Developer Mode Section
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("Developer Mode")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(.white)
+                            
+                            Toggle(isOn: $isDeveloperMode) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Enable Developer Mode")
                                         .font(.system(size: 16, weight: .medium))
                                         .foregroundColor(.white)
-                                    
-                                    Spacer()
-                                    
-                                    if inferenceConfiguration == config {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(.green)
-                                            .font(.system(size: 20))
-                                    } else {
-                                        Image(systemName: "circle")
-                                            .foregroundColor(.white.opacity(0.3))
-                                            .font(.system(size: 20))
-                                    }
+                                    Text("Stream without running inference scripts")
+                                        .font(.system(size: 13))
+                                        .foregroundColor(.white.opacity(0.6))
                                 }
-                                .padding()
-                                .background(Color.white.opacity(0.1))
-                                .cornerRadius(10)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .stroke(inferenceConfiguration == config ? Color.green : Color.white.opacity(0.2), lineWidth: inferenceConfiguration == config ? 2 : 1)
-                                )
                             }
-                            .buttonStyle(PlainButtonStyle())
+                            .tint(.cyan)
+                            .padding()
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(10)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(isDeveloperMode ? Color.cyan : Color.white.opacity(0.2), lineWidth: isDeveloperMode ? 2 : 1)
+                            )
                         }
+                        .padding(.horizontal, 30)
+                        .padding(.top, 30)
+                        
+                        // Inference Configuration Section
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("Inference Configuration")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(.white)
+                            
+                            ForEach(InferenceConfig.allCases, id: \.self) { config in
+                                Button(action: {
+                                    inferenceConfiguration = config
+                                }) {
+                                    HStack {
+                                        Text(config.rawValue)
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(.white)
+                                        
+                                        Spacer()
+                                        
+                                        if inferenceConfiguration == config {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(.green)
+                                                .font(.system(size: 20))
+                                        } else {
+                                            Image(systemName: "circle")
+                                                .foregroundColor(.white.opacity(0.3))
+                                                .font(.system(size: 20))
+                                        }
+                                    }
+                                    .padding()
+                                    .background(Color.white.opacity(0.1))
+                                    .cornerRadius(10)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(inferenceConfiguration == config ? Color.green : Color.white.opacity(0.2), lineWidth: inferenceConfiguration == config ? 2 : 1)
+                                    )
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                        .padding(.horizontal, 30)
+                        .padding(.bottom, 30)
                     }
-                    .padding(.horizontal, 30)
-                    
-                    Spacer()
                 }
             }
             .navigationTitle("Settings")
@@ -117,8 +118,11 @@ struct SettingsView: View {
 
 /// Inference configuration options
 enum InferenceConfig: String, CaseIterable {
-    case basicDemo = "Basic Demo"
-    case instrument = "Instrument"
-    case lightbulb = "Lightbulb"
-    case digitalTwin = "Digital Twin"
+    case demo = "Demo"
+    case light = "Smart Light"
+    case designVisualization = "Design Visualization"
+    case digitalWorkspace = "Digital Workspace"
+    case supermarket = "Supermarket"
+    case languageLearning = "Language Learning"
+    case popUp = "Pop-up"
 }

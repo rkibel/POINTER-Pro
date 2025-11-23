@@ -47,9 +47,9 @@ struct BoundingBoxOverlayView: View {
                         
                         // Draw segmentation mask if enabled
                         if showSegmentation, let maskData = data.decodeMask(), 
-                           let maskShape = data.maskShape, maskShape.count == 2 {
-                            let maskHeight = maskShape[0]
-                            let maskWidth = maskShape[1]
+                           data.imageSize.count == 2 {
+                            let maskHeight = data.imageSize[1]
+                            let maskWidth = data.imageSize[0]
                             
                             drawSegmentationMask(
                                 context: &context,
@@ -106,9 +106,17 @@ struct BoundingBoxOverlayView: View {
                             drawLine(context: context, from: scaledPoints[2], to: scaledPoints[6], color: .yellow)
                             drawLine(context: context, from: scaledPoints[3], to: scaledPoints[7], color: .yellow)
                             
-                            // Draw corner points
+                            // Draw corner points and labels
                             for (index, point) in scaledPoints.enumerated() {
                                 drawCornerPoint(context: context, at: point, index: index)
+                                drawCornerLabel(context: context, at: point, index: index)
+                            }
+                            
+                            // Draw orientation vectors
+                            if let rotation = data.getRotationQuaternion() {
+                                drawOrientationVectors(context: context, 
+                                                     scaledPoints: scaledPoints,
+                                                     rotation: rotation)
                             }
                         }
                     }
@@ -116,6 +124,157 @@ struct BoundingBoxOverlayView: View {
             }
         }
         .allowsHitTesting(false)
+    }
+    
+    private func drawCornerLabel(context: GraphicsContext, at point: CGPoint, index: Int) {
+        let text = "\(index)"
+        
+        // Draw label background
+        let labelRect = CGRect(x: point.x + 8, y: point.y - 12, width: 20, height: 20)
+        context.fill(Path(roundedRect: labelRect, cornerRadius: 4), with: .color(.black.opacity(0.7)))
+        
+        // Draw index number
+        var textContext = context
+        textContext.draw(
+            Text(text)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(.white),
+            at: CGPoint(x: point.x + 18, y: point.y - 2)
+        )
+    }
+    
+    private func drawOrientationVectors(context: GraphicsContext, scaledPoints: [CGPoint], 
+                                       rotation: (x: Double, y: Double, z: Double, w: Double)) {
+        // Calculate center of the bounding box
+        let center = scaledPoints.reduce(CGPoint.zero) { CGPoint(x: $0.x + $1.x, y: $0.y + $1.y) }
+        let origin = CGPoint(x: center.x / CGFloat(scaledPoints.count), 
+                           y: center.y / CGFloat(scaledPoints.count))
+        
+        // Convert quaternion to rotation matrix
+        let (x, y, z, w) = rotation
+        
+        // Rotation matrix from quaternion
+        let r00 = 1 - 2*y*y - 2*z*z
+        let r01 = 2*x*y - 2*z*w
+        let r02 = 2*x*z + 2*y*w
+        
+        let r10 = 2*x*y + 2*z*w
+        let r11 = 1 - 2*x*x - 2*z*z
+        let r12 = 2*y*z - 2*x*w
+        
+        let r20 = 2*x*z - 2*y*w
+        let r21 = 2*y*z + 2*x*w
+        let r22 = 1 - 2*x*x - 2*y*y
+        
+        // Define basis vectors in object space
+        // Normal to top face (up vector in object space)
+        let upVector = (x: 0.0, y: 0.0, z: 1.0)  // Positive Z is up/forward
+        // Right face normal (right vector in object space)
+        let rightVector = (x: 1.0, y: 0.0, z: 0.0)  // Positive X is right
+        // Far face normal (forward vector in object space)
+        let forwardVector = (x: 0.0, y: -1.0, z: 0.0)  // Negative Y is forward/far
+        
+        // Transform vectors by rotation matrix
+        let upRotated = (
+            x: r00 * upVector.x + r01 * upVector.y + r02 * upVector.z,
+            y: r10 * upVector.x + r11 * upVector.y + r12 * upVector.z,
+            z: r20 * upVector.x + r21 * upVector.y + r22 * upVector.z
+        )
+        
+        let rightRotated = (
+            x: r00 * rightVector.x + r01 * rightVector.y + r02 * rightVector.z,
+            y: r10 * rightVector.x + r11 * rightVector.y + r12 * rightVector.z,
+            z: r20 * rightVector.x + r21 * rightVector.y + r22 * rightVector.z
+        )
+        
+        let forwardRotated = (
+            x: r00 * forwardVector.x + r01 * forwardVector.y + r02 * forwardVector.z,
+            y: r10 * forwardVector.x + r11 * forwardVector.y + r12 * forwardVector.z,
+            z: r20 * forwardVector.x + r21 * forwardVector.y + r22 * forwardVector.z
+        )
+        
+        let vectorLength: CGFloat = 100
+        
+        // Draw Up vector (normal to top face) - Blue (+Z)
+        let upEnd = CGPoint(
+            x: origin.x + CGFloat(upRotated.x) * vectorLength,
+            y: origin.y + CGFloat(upRotated.y) * vectorLength
+        )
+        drawArrow(context: context, from: origin, to: upEnd, color: .blue)
+        context.draw(
+            Text("+Z")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.blue),
+            at: upEnd
+        )
+        
+        // Draw Right vector (normal to right face) - Red (+X)
+        let rightEnd = CGPoint(
+            x: origin.x + CGFloat(rightRotated.x) * vectorLength,
+            y: origin.y + CGFloat(rightRotated.y) * vectorLength
+        )
+        drawArrow(context: context, from: origin, to: rightEnd, color: .red)
+        context.draw(
+            Text("+X")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.red),
+            at: rightEnd
+        )
+        
+        // Draw Forward vector (normal to far face) - Purple (+Y)
+        let forwardEnd = CGPoint(
+            x: origin.x + CGFloat(forwardRotated.x) * vectorLength,
+            y: origin.y + CGFloat(forwardRotated.y) * vectorLength
+        )
+        drawArrow(context: context, from: origin, to: forwardEnd, color: .purple)
+        context.draw(
+            Text("+Y")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.purple),
+            at: forwardEnd
+        )
+        
+        // Draw origin point
+        let originRect = CGRect(x: origin.x - 5, y: origin.y - 5, width: 10, height: 10)
+        context.fill(Path(ellipseIn: originRect), with: .color(.white))
+        context.stroke(Path(ellipseIn: originRect), with: .color(.black), lineWidth: 2)
+        context.draw(
+            Text("Origin")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(.white),
+            at: CGPoint(x: origin.x, y: origin.y - 15)
+        )
+    }
+    
+    private func drawArrow(context: GraphicsContext, from: CGPoint, to: CGPoint, color: Color) {
+        // Draw line
+        var path = Path()
+        path.move(to: from)
+        path.addLine(to: to)
+        context.stroke(path, with: .color(color), lineWidth: 3)
+        
+        // Draw arrowhead
+        let dx = to.x - from.x
+        let dy = to.y - from.y
+        let angle = atan2(dy, dx)
+        let arrowLength: CGFloat = 12
+        let arrowAngle: CGFloat = .pi / 6
+        
+        let point1 = CGPoint(
+            x: to.x - arrowLength * cos(angle - arrowAngle),
+            y: to.y - arrowLength * sin(angle - arrowAngle)
+        )
+        let point2 = CGPoint(
+            x: to.x - arrowLength * cos(angle + arrowAngle),
+            y: to.y - arrowLength * sin(angle + arrowAngle)
+        )
+        
+        var arrowPath = Path()
+        arrowPath.move(to: to)
+        arrowPath.addLine(to: point1)
+        arrowPath.move(to: to)
+        arrowPath.addLine(to: point2)
+        context.stroke(arrowPath, with: .color(color), lineWidth: 3)
     }
     
     private func drawLine(context: GraphicsContext, from: CGPoint, to: CGPoint, color: Color) {
