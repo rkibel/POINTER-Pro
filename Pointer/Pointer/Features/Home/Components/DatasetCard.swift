@@ -105,29 +105,23 @@ struct DatasetCard: View {
 /// Handles loading preview thumbnails for dataset cards
 class DatasetPreviewLoader: ObservableObject {
     @Published var previewImages: [UIImage] = []
+    private let vmManager = VMProcessingManager()
     
     func loadPreviews(for datasetId: String) async {
-        guard let apiURL = Config.vmApiURL else { return }
-        
         do {
             // Fetch list of images
-            let imagesListURL = URL(string: "\(apiURL)/dataset/\(datasetId)/images")!
-            let (imagesData, _) = try await URLSession.shared.data(from: imagesListURL)
-            
-            guard let imagesList = try? JSONSerialization.jsonObject(with: imagesData) as? [String: Any],
-                  let referenceFilenames = imagesList["reference_images"] as? [String] else {
-                return
-            }
+            let (referenceFilenames, _) = try await vmManager.getDatasetImageFilenames(datasetId: datasetId)
             
             // Load first reference image for preview
             if let firstFilename = referenceFilenames.first {
-                let imageURL = URL(string: "\(apiURL)/dataset/\(datasetId)/image/reference/\(firstFilename)")!
+                let image = try await vmManager.loadDatasetImage(
+                    datasetId: datasetId,
+                    imageType: "reference_data",
+                    filename: firstFilename
+                )
                 
-                let (imageData, _) = try await URLSession.shared.data(from: imageURL)
-                if let image = UIImage(data: imageData) {
-                    await MainActor.run {
-                        self.previewImages = [image]
-                    }
+                await MainActor.run {
+                    self.previewImages = [image]
                 }
             }
             

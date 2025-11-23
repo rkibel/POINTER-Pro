@@ -189,56 +189,52 @@ class DatasetImageLoader: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
     
+    private let vmManager = VMProcessingManager()
+    
     func loadImages(for datasetId: String) async {
-        guard let apiURL = Config.vmApiURL else {
-            await MainActor.run {
-                self.error = "VM API not configured"
-            }
-            return
-        }
-        
         await MainActor.run {
             self.isLoading = true
             self.error = nil
         }
         
         do {
-            // Fetch list of images from the dataset
-            let imagesListURL = URL(string: "\(apiURL)/dataset/\(datasetId)/images")!
-            let (imagesData, _) = try await URLSession.shared.data(from: imagesListURL)
-            
-            guard let imagesList = try? JSONSerialization.jsonObject(with: imagesData) as? [String: Any],
-                  let referenceFilenames = imagesList["reference_images"] as? [String],
-                  let verificationFilenames = imagesList["verification_images"] as? [String] else {
-                throw NSError(domain: "DatasetImageLoader", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid images list"])
-            }
+            // First, get the list of image filenames
+            let (referenceFilenames, verificationFilenames) = try await vmManager.getDatasetImageFilenames(datasetId: datasetId)
             
             // Load reference images
             var loadedReferenceImages: [UIImage] = []
             for filename in referenceFilenames {
-                let imageURL = URL(string: "\(apiURL)/dataset/\(datasetId)/image/reference/\(filename)")!
-                
-                let (imageData, _) = try await URLSession.shared.data(from: imageURL)
-                if let image = UIImage(data: imageData) {
+                do {
+                    let image = try await vmManager.loadDatasetImage(
+                        datasetId: datasetId,
+                        imageType: "reference_data",
+                        filename: filename
+                    )
                     loadedReferenceImages.append(image)
+                } catch {
+                    print("⚠️ Failed to load reference image \(filename): \(error)")
                 }
             }
             
             // Load verification images
             var loadedVerificationImages: [UIImage] = []
             for filename in verificationFilenames {
-                let imageURL = URL(string: "\(apiURL)/dataset/\(datasetId)/image/verification/\(filename)")!
-                
-                let (imageData, _) = try await URLSession.shared.data(from: imageURL)
-                if let image = UIImage(data: imageData) {
+                do {
+                    let image = try await vmManager.loadDatasetImage(
+                        datasetId: datasetId,
+                        imageType: "verification",
+                        filename: filename
+                    )
                     loadedVerificationImages.append(image)
+                } catch {
+                    print("⚠️ Failed to load verification image \(filename): \(error)")
                 }
             }
             
             await MainActor.run {
                 self.referenceImages = loadedReferenceImages
-                self.verificationImages = loadedVerificationImages
                 self.referenceFilenames = referenceFilenames
+                self.verificationImages = loadedVerificationImages
                 self.verificationFilenames = verificationFilenames
                 self.isLoading = false
             }

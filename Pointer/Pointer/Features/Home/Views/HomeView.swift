@@ -24,8 +24,9 @@ struct HomeView: View {
     @State private var inferenceMessage = ""
     @State private var isRunningInference = false
     @State private var showingSettings = false
-    @State private var inferenceConfiguration: InferenceConfig = .basicDemo
+    @State private var inferenceConfiguration: InferenceConfig = .demo
     @State private var isDeveloperMode = false
+    @State private var isRefreshing = false
     
     private var backgroundGradient: LinearGradient {
         LinearGradient(
@@ -61,94 +62,111 @@ struct HomeView: View {
                     .padding(.top, 10)
                     .padding(.horizontal, 20)
                     
-                    // Logo/Title Section - Fixed at top
-                    VStack(spacing: 16) {
-                        // Main title
-                        Text("POINTER")
-                            .font(.system(size: 56, weight: .bold, design: .default))
-                            .foregroundColor(.white)
-                            .tracking(4)
-                        
-                        // Subtitle
-                        Text("Persistent Object-anchored Interactions\nand Tagging for Enriched Reality")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(.white.opacity(0.8))
-                            .multilineTextAlignment(.center)
-                            .lineSpacing(4)
-                            .padding(.horizontal, 40)
-                    }
-                    .padding(.top, 20)
-                    .padding(.bottom, 40)
-                    
-                    // Preprocessed Datasets Section - Fixed header
-                    if !vmManager.availableDatasets.isEmpty {
-                        VStack(alignment: .leading, spacing: 0) {
-                            Button(action: {
-                                showingDatasets.toggle()
-                            }) {
-                                HStack {
-                                    Image(systemName: "chevron.right")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(.white)
-                                        .frame(width: 20)
-                                        .rotationEffect(.degrees(showingDatasets ? 90 : 0))
-                                        .animation(.easeInOut(duration: 0.2), value: showingDatasets)
-                                    Text("Preprocessed Objects")
-                                        .font(.system(size: 18, weight: .semibold))
-                                        .foregroundColor(.white)
-                                    Spacer()
-                                }
+                    // Scrollable content area with pull-to-refresh
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            // Logo/Title Section - Fixed at top
+                            VStack(spacing: 16) {
+                                // Main title
+                                Text("POINTER")
+                                    .font(.system(size: 56, weight: .bold, design: .default))
+                                    .foregroundColor(.white)
+                                    .tracking(4)
+                                
+                                // Subtitle
+                                Text("Persistent Object-anchored Interactions\nand Tagging for Enriched Reality")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.8))
+                                    .multilineTextAlignment(.center)
+                                    .lineSpacing(4)
+                                    .padding(.horizontal, 40)
                             }
-                            .padding(.horizontal, 40)
-                            .padding(.vertical, 12)
+                            .padding(.top, 20)
+                            .padding(.bottom, 40)
                             
-                            // Expandable list
-                            if showingDatasets {
-                                List {
-                                    ForEach(vmManager.availableDatasets.prefix(5)) { dataset in
-                                        DatasetCard(
-                                            dataset: dataset,
-                                            isSelected: selectedDataset?.id == dataset.id,
-                                            onSelect: {
-                                                selectedDataset = (selectedDataset?.id == dataset.id) ? nil : dataset
-                                            },
-                                            onView: {
-                                                // Navigation is handled separately
-                                            }
-                                        )
-                                        .listRowBackground(Color.clear)
-                                        .listRowSeparator(.hidden)
-                                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                            Button(role: .destructive) {
-                                                datasetToDelete = dataset
-                                                showingDeleteConfirmation = true
-                                            } label: {
-                                                Label("Delete", systemImage: "trash")
-                                            }
-                                        }
-                                        .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                                            Button {
-                                                editingDataset = dataset
-                                                editDescription = dataset.description
-                                                showingEditDialog = true
-                                            } label: {
-                                                Label("Edit", systemImage: "pencil")
-                                            }
-                                            .tint(.blue)
-                                        }
+                            // Preprocessed Datasets Section - Always visible with count
+                            VStack(alignment: .leading, spacing: 0) {
+                                Button(action: {
+                                    if !vmManager.availableDatasets.isEmpty {
+                                        showingDatasets.toggle()
+                                    }
+                                }) {
+                                    HStack {
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .foregroundColor(.white)
+                                            .frame(width: 20)
+                                            .rotationEffect(.degrees(showingDatasets ? 90 : 0))
+                                            .animation(.easeInOut(duration: 0.2), value: showingDatasets)
+                                            .opacity(vmManager.availableDatasets.isEmpty ? 0.3 : 1.0)
+                                        Text("Preprocessed Objects (\(vmManager.availableDatasets.count))")
+                                            .font(.system(size: 18, weight: .semibold))
+                                            .foregroundColor(.white)
+                                        Spacer()
                                     }
                                 }
-                                .listStyle(.plain)
-                                .scrollContentBackground(.hidden)
-                                .frame(maxHeight: 300)
+                                .disabled(vmManager.availableDatasets.isEmpty)
                                 .padding(.horizontal, 40)
+                                .padding(.vertical, 12)
+                                
+                                // Expandable list or empty message
+                                if !vmManager.availableDatasets.isEmpty && showingDatasets {
+                                    List {
+                                        ForEach(vmManager.availableDatasets.prefix(5)) { dataset in
+                                            DatasetCard(
+                                                dataset: dataset,
+                                                isSelected: selectedDataset?.id == dataset.id,
+                                                onSelect: {
+                                                    selectedDataset = (selectedDataset?.id == dataset.id) ? nil : dataset
+                                                },
+                                                onView: {
+                                                    // Navigation is handled separately
+                                                }
+                                            )
+                                            .listRowBackground(Color.clear)
+                                            .listRowSeparator(.hidden)
+                                            .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                                Button(role: .destructive) {
+                                                    datasetToDelete = dataset
+                                                    showingDeleteConfirmation = true
+                                                } label: {
+                                                    Label("Delete", systemImage: "trash")
+                                                }
+                                            }
+                                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                                Button {
+                                                    editingDataset = dataset
+                                                    editDescription = dataset.description
+                                                    showingEditDialog = true
+                                                } label: {
+                                                    Label("Edit", systemImage: "pencil")
+                                                }
+                                                .tint(.blue)
+                                            }
+                                        }
+                                    }
+                                    .listStyle(.plain)
+                                    .scrollContentBackground(.hidden)
+                                    .frame(height: min(CGFloat(vmManager.availableDatasets.count) * 110, 270))
+                                    .padding(.horizontal, 40)
+                                } else if vmManager.availableDatasets.isEmpty {
+                                    Text("No preprocessed objects yet. Scan an object to get started!")
+                                        .font(.system(size: 14, weight: .regular))
+                                        .foregroundColor(.white.opacity(0.6))
+                                        .multilineTextAlignment(.center)
+                                        .padding(.horizontal, 40)
+                                        .padding(.vertical, 20)
+                                }
                             }
+                            .padding(.bottom, 10)
                         }
-                        .padding(.bottom, 30)
+                    }
+                    .refreshable {
+                        await refreshDatasets()
                     }
                     
-                    Spacer()
+                    Spacer(minLength: 0)
                     
                     // Action Buttons
                     VStack(spacing: 20) {
@@ -179,7 +197,8 @@ struct HomeView: View {
                             NavigationLink(
                                 destination: StreamingView(
                                     datasetId: selectedDataset?.id ?? "developer_mode",
-                                    isDeveloperMode: isDeveloperMode
+                                    isDeveloperMode: isDeveloperMode,
+                                    inferenceConfiguration: inferenceConfiguration
                                 ),
                                 isActive: $navigateToStreaming
                             ) {
@@ -260,9 +279,7 @@ struct HomeView: View {
             }
             .navigationBarHidden(true)
             .onAppear {
-                Task {
-                    try? await vmManager.fetchAvailableDatasets()
-                }
+                Task { await refreshDatasets() }
             }
             .alert("Edit Description", isPresented: $showingEditDialog) {
                 TextField("Description", text: $editDescription)
@@ -313,6 +330,12 @@ struct HomeView: View {
                 SettingsView(inferenceConfiguration: $inferenceConfiguration, isDeveloperMode: $isDeveloperMode)
             }
         }
+    }
+    
+    private func refreshDatasets() async {
+        isRefreshing = true
+        try? await vmManager.fetchAvailableDatasets()
+        isRefreshing = false
     }
 }
 
