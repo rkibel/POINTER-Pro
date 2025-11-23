@@ -45,13 +45,19 @@ enum Config {
     
     /// Check if required configuration is available
     static var isConfigured: Bool {
-        return getEnvVariable("LIVEKIT_URL") != nil &&
+        return externalIP != nil &&
         getEnvVariable("LIVEKIT_TOKEN") != nil
     }
     
-    /// LiveKit server URL (wss://your-server.com)
+    /// External IP address
+    static var externalIP: String? {
+        return getEnvVariable("EXTERNAL_IP")
+    }
+    
+    /// LiveKit server URL (derived from EXTERNAL_IP)
     static var liveKitURL: String? {
-        return getEnvVariable("LIVEKIT_URL")
+        guard let ip = externalIP else { return nil }
+        return "ws://\(ip):7880"
     }
     
     /// LiveKit access token
@@ -64,15 +70,23 @@ enum Config {
         return getEnvVariable("LIVEKIT_ROOM") ?? "live"
     }
     
+    // MARK: - LIFX Configuration
+    
+    /// LIFX API token for light control
+    static var lifxToken: String? {
+        return getEnvVariable("LIFX_TOKEN")
+    }
+    
     // MARK: - VM API Configuration
     
-    /// VM API base URL (e.g., http://your-vm-ip:5000)
+    /// VM API base URL (derived from EXTERNAL_IP)
     static var vmApiURL: String? {
-        return getEnvVariable("VM_API_URL")
+        guard let ip = externalIP else { return nil }
+        return "http://\(ip):5000"
     }
     
     /// Check if VM API is configured
     static var isVMConfigured: Bool {
-        return vmApiURL != nil
+        return externalIP != nil
     }
 }
