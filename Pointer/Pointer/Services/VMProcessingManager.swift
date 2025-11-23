@@ -16,6 +16,17 @@ class VMProcessingManager: ObservableObject {
     @Published var processingProgress: String = ""
     @Published var availableDatasets: [PreprocessedDataset] = []
     
+    private var fetchTask: Task<Void, Never>?
+    private let urlSession: URLSession
+    
+    init() {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 60
+        configuration.waitsForConnectivity = true
+        self.urlSession = URLSession(configuration: configuration)
+    }
+    
     enum VMError: LocalizedError {
         case notConfigured, noImages, invalidDescription, invalidResponse
         case connectionFailed(String), uploadFailed(String), processingFailed(String)
@@ -71,58 +82,78 @@ class VMProcessingManager: ObservableObject {
                 throw VMError.invalidResponse
             }
             
-            await saveDataset(PreprocessedDataset(id: datasetId, description: description, imageCount: images.count))
+            await saveDataset(PreprocessedDataset(id: datasetId, description: description, timestamp: Date(), imageCount: images.count))
             return datasetId
         }
     }
     
     /// Fetch list of available datasets from VM
     func fetchAvailableDatasets() async throws {
+        fetchTask?.cancel()
+        
         guard let apiURL = Config.vmApiURL else {
-            await MainActor.run { self.availableDatasets = loadLocalDatasets() }
-            return
+            await MainActor.run { self.availableDatasets = [] }
+            throw VMError.notConfigured
         }
         
-        await updateProgress("Fetching datasets...")
+        var thrownError: Error?
         
-        do {
-            let url = URL(string: "\(apiURL)/datasets")!
-            let (data, response) = try await URLSession.shared.data(from: url)
+        fetchTask = Task {
+            await updateProgress("Fetching datasets...")
             
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                throw VMError.connectionFailed("Failed to fetch datasets")
-            }
-            
-            let responseDict = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-            guard let datasetsArray = responseDict?["datasets"] as? [[String: Any]] else {
-                throw VMError.invalidResponse
-            }
-            
-            let formatter = ISO8601DateFormatter()
-            let datasets = datasetsArray.compactMap { dict -> PreprocessedDataset? in
-                guard let id = dict["id"] as? String,
-                      let description = dict["description"] as? String,
-                      let timestampString = dict["timestamp"] as? String,
-                      let imageCount = dict["imageCount"] as? Int else { return nil }
+            do {
+                let url = URL(string: "\(apiURL)/datasets")!
+                let (data, response) = try await urlSession.data(from: url)
                 
-                let timestamp = formatter.date(from: timestampString) ?? Date()
-                return PreprocessedDataset(id: id, description: description, timestamp: timestamp, imageCount: imageCount)
+                guard !Task.isCancelled else { return }
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    thrownError = VMError.connectionFailed("Failed to fetch datasets")
+                    return
+                }
+                
+                let responseDict = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                guard let datasetsArray = responseDict?["datasets"] as? [[String: Any]] else {
+                    thrownError = VMError.invalidResponse
+                    return
+                }
+                
+                let formatter = ISO8601DateFormatter()
+                let datasets = datasetsArray.compactMap { dict -> PreprocessedDataset? in
+                    guard let id = dict["id"] as? String,
+                          let description = dict["description"] as? String,
+                          let timestampString = dict["timestamp"] as? String,
+                          let imageCount = dict["imageCount"] as? Int else { return nil }
+                    
+                    let timestamp = formatter.date(from: timestampString) ?? Date()
+                    return PreprocessedDataset(id: id, description: description, timestamp: timestamp, imageCount: imageCount)
+                }
+                
+                // Server is source of truth - sort by timestamp
+                let sortedDatasets = datasets.sorted { $0.timestamp > $1.timestamp }
+                guard !Task.isCancelled else { return }
+                
+                await MainActor.run {
+                    self.availableDatasets = sortedDatasets
+                    self.processingProgress = ""
+                }
+            } catch is CancellationError {
+                // Keep existing data on cancellation
+            } catch {
+                thrownError = error
+                await MainActor.run {
+                    self.availableDatasets = []
+                    self.processingProgress = ""
+                }
             }
-            
-            let allDatasets = mergeDatasetsUnique(remote: datasets, local: loadLocalDatasets())
-            await MainActor.run {
-                self.availableDatasets = allDatasets
-                self.processingProgress = ""
-            }
-        } catch {
-            await MainActor.run {
-                self.availableDatasets = loadLocalDatasets()
-                self.processingProgress = ""
-            }
+        }
+        await fetchTask?.value
+        
+        if let error = thrownError {
+            throw error
         }
     }
 
-    /// Delete a dataset from the VM and local storage
+    /// Delete a dataset from the VM
     func deleteDataset(id datasetId: String) async throws {
         if let apiURL = Config.vmApiURL, let url = URL(string: "\(apiURL)/dataset/\(datasetId)") {
             var request = URLRequest(url: url)
@@ -130,12 +161,10 @@ class VMProcessingManager: ObservableObject {
             _ = try await performRequest(request)
         }
 
-        var datasets = loadLocalDatasets()
-        datasets.removeAll { $0.id == datasetId }
-        if let encoded = try? JSONEncoder().encode(datasets) {
-            UserDefaults.standard.set(encoded, forKey: "preprocessed_datasets")
+        // Remove from current list
+        await MainActor.run { 
+            self.availableDatasets.removeAll { $0.id == datasetId }
         }
-        await MainActor.run { self.availableDatasets = datasets }
     }
     
     /// Update the description (text prompt) of a dataset
@@ -149,36 +178,16 @@ class VMProcessingManager: ObservableObject {
         
         _ = try await performRequest(request)
         
-        var datasets = loadLocalDatasets()
-        if let index = datasets.firstIndex(where: { $0.id == datasetId }) {
-            datasets[index] = PreprocessedDataset(
-                id: datasetId, description: description,
-                timestamp: datasets[index].timestamp, imageCount: datasets[index].imageCount
-            )
-            
-            if let encoded = try? JSONEncoder().encode(datasets) {
-                UserDefaults.standard.set(encoded, forKey: "preprocessed_datasets")
+        // Update in current list
+        await MainActor.run {
+            if let index = self.availableDatasets.firstIndex(where: { $0.id == datasetId }) {
+                self.availableDatasets[index] = PreprocessedDataset(
+                    id: datasetId, 
+                    description: description,
+                    timestamp: self.availableDatasets[index].timestamp, 
+                    imageCount: self.availableDatasets[index].imageCount
+                )
             }
-            await MainActor.run { self.availableDatasets = datasets.sorted { $0.timestamp > $1.timestamp } }
-        }
-    }
-    
-    /// Run inference on a preprocessed dataset
-    func runInference(datasetId: String) async throws -> String {
-        guard let apiURL = Config.vmApiURL else { throw VMError.notConfigured }
-        
-        return try await withProcessing("Starting inference...") {
-            var request = URLRequest(url: URL(string: "\(apiURL)/inference/\(datasetId)")!)
-            request.httpMethod = "POST"
-            request.timeoutInterval = 600
-            
-            await updateProgress("Running inference on VM...")
-            let responseDict = try await performRequest(request)
-            
-            guard let message = responseDict["message"] as? String else {
-                throw VMError.invalidResponse
-            }
-            return message
         }
     }
     
@@ -212,6 +221,45 @@ class VMProcessingManager: ObservableObject {
         return message
     }
     
+    /// Fetch list of image filenames for a dataset
+    func getDatasetImageFilenames(datasetId: String) async throws -> (referenceImages: [String], verificationImages: [String]) {
+        guard let apiURL = Config.vmApiURL else { throw VMError.notConfigured }
+        
+        let url = URL(string: "\(apiURL)/dataset/\(datasetId)/images")!
+        let (data, response) = try await urlSession.data(from: url)
+        
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw VMError.connectionFailed("Failed to fetch image list")
+        }
+        
+        guard let responseDict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let referenceImages = responseDict["reference_images"] as? [String],
+              let verificationImages = responseDict["verification_images"] as? [String] else {
+            throw VMError.invalidResponse
+        }
+        
+        return (referenceImages, verificationImages)
+    }
+    
+    /// Load a single image from a dataset
+    func loadDatasetImage(datasetId: String, imageType: String, filename: String) async throws -> UIImage {
+        guard let apiURL = Config.vmApiURL else { throw VMError.notConfigured }
+        
+        // imageType should be "reference_data" or "verification"
+        let url = URL(string: "\(apiURL)/dataset/\(datasetId)/image/\(imageType)/\(filename)")!
+        let (data, response) = try await urlSession.data(from: url)
+        
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw VMError.connectionFailed("Failed to fetch image: \(filename)")
+        }
+        
+        guard let image = UIImage(data: data) else {
+            throw VMError.invalidResponse
+        }
+        
+        return image
+    }
+    
     // MARK: - Private Helpers
     
     /// Execute a block with processing state management
@@ -236,7 +284,7 @@ class VMProcessingManager: ObservableObject {
     
     /// Perform HTTP request and return parsed JSON response
     private func performRequest(_ request: URLRequest) async throws -> [String: Any] {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw VMError.invalidResponse
@@ -256,34 +304,16 @@ class VMProcessingManager: ObservableObject {
         
         return responseDict
     }
-    
-    private func mergeDatasetsUnique(remote: [PreprocessedDataset], local: [PreprocessedDataset]) -> [PreprocessedDataset] {
-        var merged: [String: PreprocessedDataset] = [:]
-        local.forEach { merged[$0.id] = $0 }
-        remote.forEach { merged[$0.id] = $0 }  // Remote overwrites local
-        return merged.values.sorted { $0.timestamp > $1.timestamp }
-    }
         
     private func saveDataset(_ dataset: PreprocessedDataset) async {
-        var datasets = loadLocalDatasets()
-        datasets.removeAll { $0.id == dataset.id }
-        datasets.append(dataset)
-        
-        if let encoded = try? JSONEncoder().encode(datasets) {
-            UserDefaults.standard.set(encoded, forKey: "preprocessed_datasets")
-        }
-        
         await MainActor.run {
-            self.availableDatasets = datasets.sorted { $0.timestamp > $1.timestamp }
+            // Remove any existing entry with same ID
+            self.availableDatasets.removeAll { $0.id == dataset.id }
+            // Add new dataset
+            self.availableDatasets.append(dataset)
+            // Sort by timestamp
+            self.availableDatasets.sort { $0.timestamp > $1.timestamp }
         }
-    }
-    
-    private func loadLocalDatasets() -> [PreprocessedDataset] {
-        guard let data = UserDefaults.standard.data(forKey: "preprocessed_datasets"),
-              let datasets = try? JSONDecoder().decode([PreprocessedDataset].self, from: data) else {
-            return []
-        }
-        return datasets.sorted { $0.timestamp > $1.timestamp }
     }
 }
 
