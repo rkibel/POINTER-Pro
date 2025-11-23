@@ -45,10 +45,19 @@ Edit `.env` with your LiveKit server information:
 
 ```bash
 # LiveKit Server Configuration
-LIVEKIT_URL=ws://your-server-ip:7880
+EXTERNAL_IP=your-server-ip
 LIVEKIT_TOKEN=your_generated_token_here
 LIVEKIT_ROOM=live
+
+# Optional: LIFX Lightbulb Control (for Lightbulb inference mode)
+LIFX_TOKEN=your_lifx_token_here
 ```
+
+**To get your LIFX token:**
+1. Go to https://cloud.lifx.com/settings
+2. Sign in with your LIFX account
+3. Generate a new Personal Access Token
+4. Copy and paste it into the `.env` file
 
 **Important:** Never commit your `.env` file! It contains sensitive credentials.
 
@@ -84,11 +93,22 @@ Follow the comprehensive guide in [`livekit-server-setup.md`](./livekit-server-s
 
 ### Live Inference
 
-1. From the home page, tap **Inference** to start the streaming interface
-2. The camera preview will appear with visual indicators showing the pose estimation region
-3. Press the **Play** button to start streaming to LiveKit server
-4. Press **Stop** to end the stream
-5. Monitor connection status indicator at the top of the screen
+1. From the home page, tap the **Settings** (gear icon) to configure inference mode
+2. Select your desired inference configuration:
+   - **Basic Demo** - Standard pose estimation
+   - **Instrument** - (Future feature)
+   - **Lightbulb** - Control LIFX WiFi bulbs with object pose
+   - **Digital Twin** - (Future feature)
+3. Tap **Inference** to start the streaming interface
+4. The camera preview will appear with visual indicators showing the pose estimation region
+5. Press the **Play** button to start streaming to LiveKit server
+6. Press **Stop** to end the stream
+7. Monitor connection status indicator at the top of the screen
+
+**Lightbulb Mode:** When enabled, the app will control your LIFX bulb based on the tracked object's 6DOF pose:
+- **Brightness**: Based on Z distance (closer = brighter)
+- **Hue**: Based on X position (left = red, right = blue)
+- **Saturation**: Based on Y position (up = more saturated, down = less saturated)
 
 **Note:** Scan Objects and Inference use independent camera sessions - switching between them properly allocates/deallocates resources.
 
