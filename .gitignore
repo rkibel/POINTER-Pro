@@ -95,3 +95,4 @@ iOSInjectionProject/
 .env.*.local
 Config.plist
 secrets.plist
+Info.plist
